@@ -1,0 +1,207 @@
+/**
+ * LiveFlow CSS Custom Properties
+ * Premium Silicon Valley Dark Theme
+ *
+ * Import once at root (e.g. globals.css):
+ *   @import '@liveflow/design-system/tokens.css';
+ *
+ * NOTE: no @layer wrapper — works without @tailwind base directive.
+ */
+
+:root,
+[data-theme="dark"],
+.lf-dark {
+    /* ── Background ─────────────────────────────────────────────── */
+    --lf-bg-base:      #05060b;
+    --lf-bg-surface:   #090b12;
+    --lf-bg-elevated:  #0d1018;
+    --lf-bg-subtle:    #111520;
+    --lf-bg-overlay:   #161c2a;
+    --lf-bg-glass:     rgba(9, 11, 18, 0.75);
+    --lf-bg-glass-light: rgba(255, 255, 255, 0.04);
+
+    /* ── Border ─────────────────────────────────────────────────── */
+    --lf-border-faint:   #1d2436;
+    --lf-border-default: #273047;
+    --lf-border-strong:  #384059;
+    --lf-border-focus:   #8b58e8;
+    --lf-border-glass:   rgba(255, 255, 255, 0.08);
+
+    /* ── Text ───────────────────────────────────────────────────── */
+    --lf-text-primary:   #cdd6e8;
+    --lf-text-secondary: #7a8ba6;
+    --lf-text-muted:     #536076;
+    --lf-text-disabled:  #384059;
+    --lf-text-inverse:   #05060b;
+
+    /* ── Primary (Violet) ───────────────────────────────────────── */
+    --lf-primary:         #6d35d4;
+    --lf-primary-hover:   #8b58e8;
+    --lf-primary-active:  #5228b0;
+    --lf-primary-muted:   #180832;
+    --lf-primary-fg:      #ffffff;
+
+    /* ── Accent (Cyan) ──────────────────────────────────────────── */
+    --lf-accent:          #18c0e0;
+    --lf-accent-hover:    #3dd4f0;
+    --lf-accent-active:   #1090b0;
+    --lf-accent-muted:    #011e28;
+    --lf-accent-fg:       #05060b;
+
+    /* ── Success ────────────────────────────────────────────────── */
+    --lf-success:         #34d399;
+    --lf-success-muted:   #044027;
+    --lf-success-fg:      #05060b;
+
+    /* ── Warning ────────────────────────────────────────────────── */
+    --lf-warn:            #fbbf24;
+    --lf-warn-muted:      #5c2800;
+    --lf-warn-fg:         #05060b;
+
+    /* ── Danger ─────────────────────────────────────────────────── */
+    --lf-danger:          #f87171;
+    --lf-danger-muted:    #5a1010;
+    --lf-danger-fg:       #05060b;
+
+    /* ── Live Signal ────────────────────────────────────────────── */
+    --lf-live:            #f87171;
+    --lf-offline:         #384059;
+    --lf-warn-signal:     #fbbf24;
+
+    /* ── Gradients ──────────────────────────────────────────────── */
+    --lf-gradient-brand:   linear-gradient(135deg, #7c3aed 0%, #18c0e0 100%);
+    --lf-gradient-primary: linear-gradient(135deg, #7c3aed 0%, #4f1fb8 100%);
+    --lf-gradient-accent:  linear-gradient(135deg, #18c0e0 0%, #0a6e8a 100%);
+    --lf-gradient-surface: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 100%);
+    --lf-gradient-glow:    radial-gradient(ellipse at top, rgba(109,53,212,0.15) 0%, transparent 70%);
+
+    /* ── Shadows / Glow ─────────────────────────────────────────── */
+    --lf-shadow-xs:       0 1px 2px 0 rgba(0,0,0,0.6);
+    --lf-shadow-sm:       0 2px 6px 0 rgba(0,0,0,0.65), 0 1px 2px 0 rgba(0,0,0,0.4);
+    --lf-shadow-md:       0 4px 16px 0 rgba(0,0,0,0.7), 0 2px 4px 0 rgba(0,0,0,0.5);
+    --lf-shadow-lg:       0 8px 32px 0 rgba(0,0,0,0.8), 0 4px 8px 0 rgba(0,0,0,0.5);
+    --lf-shadow-xl:       0 16px 56px 0 rgba(0,0,0,0.9), 0 8px 16px 0 rgba(0,0,0,0.6);
+    --lf-shadow-glass:    0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07);
+    --lf-glow-primary:    0 0 20px 3px rgba(109,53,212,0.45), 0 0 6px 0 rgba(109,53,212,0.7);
+    --lf-glow-primary-sm: 0 0 10px 2px rgba(109,53,212,0.35), 0 0 3px 0 rgba(109,53,212,0.6);
+    --lf-glow-accent:     0 0 20px 3px rgba(24,192,224,0.35), 0 0 6px 0 rgba(24,192,224,0.6);
+    --lf-glow-accent-sm:  0 0 10px 2px rgba(24,192,224,0.3), 0 0 3px 0 rgba(24,192,224,0.5);
+    --lf-glow-success:    0 0 14px 2px rgba(52,211,153,0.35), 0 0 4px 0 rgba(52,211,153,0.5);
+    --lf-glow-danger:     0 0 14px 2px rgba(248,113,113,0.45), 0 0 4px 0 rgba(248,113,113,0.6);
+    --lf-glow-brand:      0 0 30px 6px rgba(124,58,237,0.3), 0 0 60px 12px rgba(24,192,224,0.15);
+
+    /* ── Radii ──────────────────────────────────────────────────── */
+    --lf-radius-xs:   3px;
+    --lf-radius-sm:   5px;
+    --lf-radius-md:   8px;
+    --lf-radius-lg:   10px;
+    --lf-radius-xl:   14px;
+    --lf-radius-2xl:  18px;
+    --lf-radius-3xl:  24px;
+    --lf-radius-4xl:  32px;
+    --lf-radius-full: 9999px;
+
+    /* ── Typography ─────────────────────────────────────────────── */
+    --lf-font-sans:    'Inter var', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --lf-font-mono:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', monospace;
+    --lf-font-display: 'Inter var', 'Inter', system-ui, sans-serif;
+
+    /* ── Transitions ────────────────────────────────────────────── */
+    --lf-duration-fast:    100ms;
+    --lf-duration-normal:  180ms;
+    --lf-duration-slow:    300ms;
+    --lf-duration-slower:  500ms;
+    --lf-easing:           cubic-bezier(0.4, 0, 0.2, 1);
+    --lf-easing-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+    --lf-easing-snappy:    cubic-bezier(0.2, 0, 0, 1);
+    --lf-easing-smooth:    cubic-bezier(0.25, 0.1, 0.25, 1);
+
+    /* ── Backdrop Blur ──────────────────────────────────────────── */
+    --lf-blur-sm:    6px;
+    --lf-blur-md:    12px;
+    --lf-blur-lg:    20px;
+    --lf-blur-xl:    32px;
+    --lf-blur-glass: 16px;
+}
+
+/* ── Global base resets ──────────────────────────────────────────────────────── */
+body {
+    background-color: var(--lf-bg-base);
+    color: var(--lf-text-primary);
+    font-family: var(--lf-font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+    border-color: var(--lf-border-faint);
+}
+
+::selection {
+    background-color: rgba(109, 53, 212, 0.3);
+    color: var(--lf-text-primary);
+}
+
+:focus-visible {
+    outline: 2px solid var(--lf-border-focus);
+    outline-offset: 2px;
+    border-radius: var(--lf-radius-sm);
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────────── */
+@keyframes lf-pulse-live {
+    0%, 100% { opacity: 1;    box-shadow: 0 0 0 0   rgba(248, 113, 113, 0.7); }
+    50%       { opacity: 0.85; box-shadow: 0 0 0 7px rgba(248, 113, 113, 0); }
+}
+
+@keyframes lf-glow-pulse {
+    0%, 100% { box-shadow: var(--lf-glow-accent); }
+    50%       { box-shadow: none; }
+}
+
+@keyframes lf-brand-glow {
+    0%, 100% { box-shadow: var(--lf-glow-primary); }
+    50%       { box-shadow: 0 0 40px 8px rgba(109,53,212,0.6), 0 0 80px 16px rgba(24,192,224,0.2); }
+}
+
+@keyframes lf-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+@keyframes lf-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lf-fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lf-slide-in-left {
+    from { opacity: 0; transform: translateX(-10px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes lf-slide-in-right {
+    from { opacity: 0; transform: translateX(10px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes lf-scale-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes lf-shimmer {
+    from { background-position: -200% center; }
+    to   { background-position:  200% center; }
+}
+
+@keyframes lf-float {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-4px); }
+}

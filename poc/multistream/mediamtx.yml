@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────────
+# MediaMTX — configurazione LiveFlow PoC Multistream
+# Principio: ingest singolo → fan-out N target via hook FFmpeg
+# Doc: https://github.com/bluenviron/mediamtx
+# ─────────────────────────────────────────────────────────────────
+
+# ── Logging ──────────────────────────────────────────────────────
+logLevel: info
+logDestinations: [stdout]
+
+# ── API HTTP (health + metriche) ─────────────────────────────────
+api: yes
+apiAddress: :9997
+
+# ── Prometheus metrics ────────────────────────────────────────────
+metrics: yes
+metricsAddress: :9998
+
+# ── Auth ──────────────────────────────────────────────────────────
+# Default MediaMTX consente API/metrics SOLO da 127.0.0.1. Nel PoC l'API
+# è interrogata dall'host e dall'health-monitor su rete Docker (IP non-locale),
+# quindi abilitiamo accesso anonimo a tutte le azioni. In PRODUZIONE: sostituire
+# con utenti/permessi reali (JWT o externalAuthenticationURL) — vedi M1.2.
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+      - action: metrics
+      - action: pprof
+
+# ── RTMP listener (ingest dal device) ────────────────────────────
+rtmp: yes
+rtmpAddress: :1935
+
+# ── RTSP listener (opzionale, per playback test locale) ──────────
+rtsp: yes
+rtspAddress: :8554
+
+# ── HLS (opzionale, playback browser locale) ─────────────────────
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+
+# ── WebRTC / WHIP (per Fase 1 dashboard browser) ─────────────────
+webrtc: no   # Abilitare in Fase 1 quando serve WHIP
+
+# ─────────────────────────────────────────────────────────────────
+# PATH CONFIGURATION
+# Il path "live/{streamKey}" è il punto di ingest.
+# Qualsiasi publisher che arriva su rtmp://host:1935/live/STREAM_KEY
+# viene accettato se STREAM_KEY corrisponde alla variabile MTX_STREAM_KEY.
+#
+# Autenticazione semplice: path name matching.
+# In produzione: usare externalAuthenticationURL o JWT.
+# ─────────────────────────────────────────────────────────────────
+paths:
+
+  # Path regex — cattura qualsiasi stream su live/* (in MediaMTX un path
+  # regex DEVE iniziare con "~"). Il gruppo (.+) cattura la stream key.
+  "~^live/(.+)$":
+
+    # ── Sorgente: publisher esterno (OBS, ffmpeg device) ─────────
+    source: publisher
+
+    # ── Fan-out: lancia FFmpeg quando un publisher è attivo ──────
+    # FFmpeg legge il flusso da MediaMTX stesso (RTMP interno su localhost)
+    # e lo ri-pubblica in parallelo verso i due target dummy.
+    # NB: MediaMTX NON esegue il comando in una shell, quindi le variabili
+    # d'ambiente arbitrarie ($TARGET_*) non verrebbero espanse: nel PoC i
+    # target sono cablati. $MTX_PATH è invece una variabile runtime di MediaMTX.
+    #   -c copy  = pass-through (no re-encode nello spike)
+    #   -f flv   = formato output RTMP
+    # Per ABR in Fase 1: sostituire "-c copy" con scale + libx264 + aac.
+    runOnReady: >
+      ffmpeg
+      -loglevel warning
+      -i rtmp://127.0.0.1:1935/$MTX_PATH
+      -c copy
+      -f flv rtmp://dummy-rtmp-1:1935/live/stream1
+      -c copy
+      -f flv rtmp://dummy-rtmp-2:1935/live/stream2
+    runOnReadyRestart: yes
+
+    # ── Cleanup: ferma FFmpeg quando il publisher si disconnette ─
+    runOnNotReady: ""

@@ -1,0 +1,26 @@
+{
+  "name": "LiveFlow Creator",
+  "short_name": "LiveFlow",
+  "description": "Go live from your phone — one tap, zero complexity.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#08090d",
+  "theme_color": "#08090d",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["entertainment", "productivity"],
+  "prefer_related_applications": false
+}

@@ -1,0 +1,59 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+.next/
+out/
+.turbo/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# test / coverage
+coverage/
+*.lcov
+
+# logs
+*.log
+npm-debug.log*
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# ruflo runtime data (local)
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+.swarm/
+*.rvf.lock
+
+# segreti locali (vedi secrets.local.example.bat)
+secrets.local.bat
+Password admin.txt
+*.pem
+*.key
+
+# binari scaricabili (LiveKit nativo per Windows, ~50 MB)
+tools/livekit/*.exe
+
+# dati runtime ruflo / agentdb / ruvector
+agentdb.rvf
+ruvector.db
+.claude-flow/
+.claude/settings.local.json
+
+# build incrementali TypeScript
+*.tsbuildinfo
+
+# dati di esecuzione
+.claude/memory.db
+apps/api/uploads/

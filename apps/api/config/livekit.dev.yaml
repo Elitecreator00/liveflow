@@ -1,0 +1,28 @@
+# LiveKit Server — config di sviluppo per LiveFlow Studio (ingest creator)
+# Avviato dal compose: --config /livekit.yaml
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  # Porta TCP per ICE.
+  tcp_port: 7881
+  # FORCE TCP: su Docker Desktop/WSL2 i pacchetti UDP > MTU (~1472B) vengono
+  # scartati → l'audio (pacchetti piccoli) passa, il VIDEO (pacchetti RTP grandi)
+  # fa cadere ICE e il publish viene annullato ("Cancelled publication").
+  # force_tcp disabilita del tutto la raccolta di candidati UDP: LiveKit offre
+  # SOLO il candidato TCP (7881, forward TCP di Docker = affidabile).
+  # Per il test reale da TELEFONO su LAN: rimettere force_tcp:false + udp_port:7882
+  # + mapping 7882/udp nel compose, per avere il media UDP a bassa latenza.
+  force_tcp: true
+  use_external_ip: false
+  # IP annunciato ai client nei candidati ICE. Per dev = IP LAN della macchina,
+  # così sia il browser host sia il TELEFONO sulla stessa WiFi possono connettersi.
+  # Cambia 192.168.1.3 con l'IP LAN effettivo se diverso.
+  node_ip: 192.168.1.3
+
+keys:
+  devkey: secret
+
+logging:
+  level: info

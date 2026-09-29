@@ -1,0 +1,52 @@
+# MediaMTX config per PoC compositing
+# Riceve RTMP dall'Egress (stream composito camera + overlay)
+# Espone HLS per verifica nel browser
+# Espone API REST per health
+
+###############################################
+# Logging
+###############################################
+logLevel: info
+logDestinations: [stdout]
+
+###############################################
+# API HTTP (health monitoring, path list)
+###############################################
+api: yes
+apiAddress: :9997
+
+###############################################
+# Metrics Prometheus
+###############################################
+metrics: yes
+metricsAddress: :9998
+
+###############################################
+# Protocolli abilitati
+###############################################
+rtmp: yes
+rtmpAddress: :1935
+rtmps: no
+
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsSegmentCount: 3
+hlsSegmentDuration: 2s
+hlsAllowOrigin: "*"
+
+rtsp: no
+webrtc: no
+
+###############################################
+# Paths
+###############################################
+paths:
+  # Path generico: accetta qualsiasi publisher senza autenticazione (PoC only)
+  "~.*":
+    source: publisher
+    # runOnReady: log quando un publisher si connette
+    runOnReady: >
+      echo "PATH READY: $MTX_PATH — publisher connesso, compositing attivo"
+    runOnNotReady: >
+      echo "PATH NOT READY: $MTX_PATH — publisher disconnesso"

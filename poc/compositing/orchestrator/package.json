@@ -1,0 +1,13 @@
+{
+  "name": "liveflow-orchestrator",
+  "version": "1.0.0",
+  "description": "LiveFlow PoC — orchestrator: avvia LiveKit Egress e fan-out FFmpeg (simula apps/api)",
+  "main": "start.js",
+  "scripts": {
+    "start": "node start.js"
+  },
+  "dependencies": {
+    "livekit-server-sdk": "^2.6.0",
+    "node-fetch": "^3.3.2"
+  }
+}

@@ -1,0 +1,29 @@
+# Neko v3 — browser remoto per l'operatore, configurato per TUNNEL SSH.
+# WebRTC su singola porta TCP (59000) + ICE-lite + NAT1TO1 127.0.0.1: così il
+# media passa nel tunnel ssh -L (niente UDP, niente porte pubbliche sul VPS).
+desktop:
+  screen: "1280x720@30"
+
+member:
+  provider: "multiuser"
+  multiuser:
+    admin_password: "admin"
+    user_password: "neko"
+
+session:
+  merciful_reconnect: true
+  implicit_hosting: true
+  cookie:
+    enabled: false
+
+server:
+  bind: "0.0.0.0:8080"
+
+webrtc:
+  icelite: true
+  nat1to1:
+    - "127.0.0.1"
+  tcpmux: 59000
+  iceservers:
+    frontend: []
+    backend: []

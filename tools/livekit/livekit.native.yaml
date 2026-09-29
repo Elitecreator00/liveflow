@@ -1,0 +1,36 @@
+# LiveKit Server — config per esecuzione NATIVA su Windows (dev).
+# Perché nativo: con Docker Desktop/WSL2 il media WebRTC passa per la NAT del
+# bridge Docker (172.19.0.1) e la connessione cade ogni ~15s (full-reconnect a
+# ciclo). Eseguendo il binario nativo si elimina del tutto quella NAT.
+#
+# node_ip 127.0.0.1 + enable_loopback_candidate: con browser sulla STESSA
+# macchina il media viaggia su loopback = massima stabilità, nessun hairpin.
+# Per il test da TELEFONO su LAN: mettere node_ip = IP LAN (es. 192.168.1.3)
+# e disattivare il loopback candidate.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  # node_ip = IP LAN reale; enable_loopback_candidate aggiunge ANCHE 127.0.0.1.
+  # Così il server offre entrambi i candidati: same-host usa loopback, il
+  # telefono su LAN usa l'IP LAN. ICE sceglie la coppia che funziona.
+  # NB: l'IP è assegnato via DHCP — se la live smette di connettersi dopo un
+  # po' di tempo, verificare con `ipconfig` che sia ancora questo e aggiornare
+  # anche LIVEKIT_WS_PUBLIC_URL in apps/api/.env.
+  node_ip: 127.0.0.1
+  enable_loopback_candidate: true
+
+keys:
+  devkey: secret
+
+# Redis: necessario perché LiveKit possa dispatchare i job all'Egress worker.
+# Punta al container redis dev (pubblicato su host:6380). Single-node + redis è ok.
+redis:
+  address: localhost:6380
+
+logging:
+  level: info

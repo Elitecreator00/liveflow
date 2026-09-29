@@ -1,0 +1,232 @@
+// ─────────────────────────────────────────────────────────────────
+// LiveFlow — Prisma Schema (MVP Fase 1)
+// Multi-tenant: ogni entità scoped ad Agency (tenant root).
+// ─────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ─────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  MANAGER
+  CHATTER
+  MODERATOR
+  CREATOR
+}
+
+enum StreamStatus {
+  IDLE
+  LIVE
+  ERROR
+  ENDED
+}
+
+enum FanoutStatus {
+  PENDING
+  CONNECTING
+  LIVE
+  RECONNECTING
+  STOPPED
+  ERROR
+}
+
+enum Platform {
+  CHATURBATE
+  STRIPCHAT
+  MYFREECAMS
+  TWITCH
+  YOUTUBE
+  CUSTOM
+}
+
+// Stato runtime di una stanza multi-browser (ADR-0011).
+enum BrowserRoomStatus {
+  IDLE         // stanza creata/ferma, pronta a partire (profilo persistito sul VPS)
+  PROVISIONING // avvio richiesto, container in accensione sul VPS
+  RUNNING      // browser attivo, viewer disponibile
+  ERROR        // ultimo avvio fallito (vedi lastError)
+}
+
+// ── Agency (tenant root) ──────────────────────────────────────────
+
+model Agency {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  creators         Creator[]
+  connectedAccounts ConnectedAccount[]
+  streamSessions   StreamSession[]
+  browserRooms     BrowserRoom[]
+
+  @@map("agencies")
+}
+
+// ── User (operator: owner/manager/chatter/moderator) ─────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  displayName  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  // A user with role CREATOR maps to a Creator record
+  creator Creator?
+
+  @@index([agencyId])
+  @@map("users")
+}
+
+// ── Creator (a performer, child of Agency + linked User) ──────────
+
+model Creator {
+  id          String   @id @default(cuid())
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  connectedAccounts ConnectedAccount[]
+  streamSessions    StreamSession[]
+
+  @@index([agencyId])
+  @@map("creators")
+}
+
+// ── ConnectedAccount (platform credentials per creator) ───────────
+
+model ConnectedAccount {
+  id              String   @id @default(cuid())
+  platform        Platform
+  // Encrypted credentials blob (AES-256-GCM). Vault placeholder.
+  encryptedCreds  String
+  // Human-readable account identifier (e.g. username on platform)
+  platformUsername String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  agencyId  String
+  agency    Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  fanoutTargets FanoutTarget[]
+
+  @@unique([creatorId, platform])
+  @@index([agencyId])
+  @@map("connected_accounts")
+}
+
+// ── StreamSession (one per go-live) ───────────────────────────────
+
+model StreamSession {
+  id        String       @id @default(cuid())
+  // The JWT-signed stream key used for ingest auth
+  streamKey String       @unique
+  status    StreamStatus @default(IDLE)
+  // Specchio della sorgente. Applicato a valle (ingestor/compositing), non
+  // sul device della creator: lì costerebbe una ricodifica per frame.
+  mirrored  Boolean      @default(false)
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  agencyId  String
+  agency    Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  fanoutTargets FanoutTarget[]
+
+  @@index([agencyId])
+  @@index([creatorId])
+  @@map("stream_sessions")
+}
+
+// ── FanoutTarget (one ffmpeg process per target) ──────────────────
+
+model FanoutTarget {
+  id        String       @id @default(cuid())
+  platform  Platform
+  rtmpUrl   String       // destination RTMP URL
+  streamKey String       // platform stream key (from ConnectedAccount)
+  status    FanoutStatus @default(PENDING)
+  // Last error message from ffmpeg process
+  lastError String?
+  startedAt DateTime?
+  stoppedAt DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  sessionId String
+  session   StreamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  connectedAccountId String
+  connectedAccount   ConnectedAccount @relation(fields: [connectedAccountId], references: [id])
+
+  @@index([sessionId])
+  @@map("fanout_targets")
+}
+
+// ── BrowserRoom (stanza multi-browser persistente, ADR-0011) ──────
+// Una stanza = identità browser stabile e totalmente isolata: fingerprint unico
+// generato alla creazione, proxy unico (modificabile dai settings), profilo
+// browser persistente sul VPS (cookie/sessioni sopravvivono ai riavvii e non
+// sono mai condivisi tra stanze).
+model BrowserRoom {
+  id   String @id @default(cuid())
+  // Nome operatore (default "Stanza N").
+  name String
+  // Fingerprint coerente generato alla creazione (UA, platform, locale, timezone,
+  // viewport, ecc.). STABILE per tutta la vita della stanza: la variazione
+  // insospettisce gli antifrode.
+  fingerprint Json
+  // URL proxy della stanza, cifrato AES-256-GCM (CryptoService, C5).
+  // Impostato alla creazione, modificabile dai settings (vale dal prossimo avvio).
+  encryptedProxy String?
+
+  status BrowserRoomStatus @default(IDLE)
+  // Sorgente Studio (StreamSession LIVE) iniettata come webcam virtuale all'avvio
+  // corrente; null = stanza avviata senza sorgente (placeholder sulla webcam).
+  // Non FK: conserviamo l'id per audit anche dopo la fine della sessione sorgente.
+  sourceSessionId String?
+  // Riferimenti assegnati dal data-plane (farm sul VPS):
+  containerId String?
+  lastError   String?
+  startedAt   DateTime?
+  stoppedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId])
+  @@map("browser_rooms")
+}

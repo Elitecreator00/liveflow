@@ -1,0 +1,101 @@
+# LiveFlow — PoC Multistream M1
+# Media server: MediaMTX (single-stream ingest → N-target RTMP fan-out)
+# Principio: il device invia UN solo flusso; fan-out avviene nel cloud.
+#
+# Topologia:
+#   device (OBS/ffmpeg) → MediaMTX :1935 (ingest)
+#                              ↓ runOnReady hook (FFmpeg)
+#                    ┌─────────┴─────────┐
+#               dummy-rtmp-1         dummy-rtmp-2
+#               nginx-rtmp :19351    nginx-rtmp :19352
+#               HLS verif. :8081     HLS verif. :8082
+#
+# Avvio: docker compose up -d
+# Stop:  docker compose down
+
+version: "3.9"
+
+services:
+
+  # ─────────────────────────────────────────────────────
+  # MEDIA SERVER — ingest + fan-out orchestrator
+  # ─────────────────────────────────────────────────────
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: liveflow-mediamtx
+    restart: unless-stopped
+    environment:
+      # Ingest RTMP stream key (autenticazione semplice via path)
+      MTX_STREAM_KEY: ${STREAM_KEY:-liveflow_secret}
+      # Target fan-out (placeholder: sostituire con URL reali in Fase 1)
+      TARGET_1_URL: ${TARGET_1_URL:-rtmp://dummy-rtmp-1:1935/live}
+      TARGET_1_KEY: ${TARGET_1_KEY:-stream1}
+      TARGET_2_URL: ${TARGET_2_URL:-rtmp://dummy-rtmp-2:1935/live}
+      TARGET_2_KEY: ${TARGET_2_KEY:-stream2}
+    ports:
+      - "1935:1935"   # RTMP ingest (device → media server)
+      - "8554:8554"   # RTSP (opzionale, per playback test)
+      - "8888:8888"   # HLS playback (opzionale)
+      - "9997:9997"   # HTTP API (health + path list)
+      - "9998:9998"   # Prometheus metrics
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - liveflow-poc
+    depends_on:
+      - dummy-rtmp-1
+      - dummy-rtmp-2
+    # FFmpeg deve essere disponibile nel container per il hook fan-out.
+    # L'immagine bluenviron/mediamtx include ffmpeg.
+
+  # ─────────────────────────────────────────────────────
+  # DUMMY TARGET 1 — nginx-rtmp ricevitore (simula Twitch/platform A)
+  # ─────────────────────────────────────────────────────
+  dummy-rtmp-1:
+    image: tiangolo/nginx-rtmp
+    container_name: liveflow-target-1
+    restart: unless-stopped
+    volumes:
+      - ./nginx-rtmp-1.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "19351:1935"  # RTMP ricevuto dal fan-out
+      - "8081:80"     # HTTP stat + HLS verifica
+    networks:
+      - liveflow-poc
+
+  # ─────────────────────────────────────────────────────
+  # DUMMY TARGET 2 — nginx-rtmp ricevitore (simula YouTube/platform B)
+  # ─────────────────────────────────────────────────────
+  dummy-rtmp-2:
+    image: tiangolo/nginx-rtmp
+    container_name: liveflow-target-2
+    restart: unless-stopped
+    volumes:
+      - ./nginx-rtmp-2.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "19352:1935"  # RTMP ricevuto dal fan-out
+      - "8082:80"     # HTTP stat + HLS verifica
+    networks:
+      - liveflow-poc
+
+  # ─────────────────────────────────────────────────────
+  # HEALTH MONITOR — polling REST API MediaMTX
+  # ─────────────────────────────────────────────────────
+  health-monitor:
+    image: python:3.12-slim
+    container_name: liveflow-health-monitor
+    restart: unless-stopped
+    environment:
+      MEDIAMTX_API: "http://mediamtx:9997"
+      POLL_INTERVAL: "5"
+    volumes:
+      - ./health_monitor.py:/app/health_monitor.py:ro
+    command: python /app/health_monitor.py
+    networks:
+      - liveflow-poc
+    depends_on:
+      - mediamtx
+
+networks:
+  liveflow-poc:
+    driver: bridge

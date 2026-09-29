@@ -1,0 +1,30 @@
+# Spike S4/S5 — un container browser con webcam virtuale + display remoto (Neko).
+# L'operatore apre la URL Neko da Chrome su QUALSIASI PC e guida il browser remoto.
+# Prerequisito: /dev/video10 già creato (modprobe v4l2loopback) e alimentato
+# (ffmpeg testsrc per S1, oppure ingestor.mjs per S2). Vedi README.md.
+#
+#   docker compose -f docker-compose.spike.yml up
+#   → apri  http://<ip-vps>:8080  (password: neko / admin)
+#
+# In produzione: Chromium → Camoufox (anti-detect), proxy/fingerprint per-sessione
+# iniettati dalla launch spec del control-plane. Qui è il minimo per provare S4/S5.
+services:
+  neko-chromium:
+    image: m1k1o/neko:chromium
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "8080:8080"        # UI Neko (WebRTC display)
+      - "52000-52100:52000-52100/udp"  # media WebRTC
+    devices:
+      - "/dev/video10:/dev/video10"    # la webcam virtuale v4l2loopback
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      NEKO_SCREEN: "1280x720@30"
+      NEKO_PASSWORD: "neko"
+      NEKO_PASSWORD_ADMIN: "admin"
+      NEKO_EPR: "52000-52100"
+      NEKO_NAT1TO1: "${VPS_PUBLIC_IP}"   # IP pubblico del VPS per i candidati ICE
+      # Avvia Chromium forzando la webcam virtuale come device preferito.
+      NEKO_ICELITE: "true"

@@ -1,0 +1,16 @@
+# Spike S2 — LiveKit server self-contained sul VPS (solo loopback, NON esposto).
+# Publisher + ingestor girano sullo stesso host e si connettono a 127.0.0.1.
+port: 7880
+bind_addresses:
+  - "127.0.0.1"
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: "127.0.0.1"
+  enable_loopback_candidate: true
+keys:
+  # Secret >=32 char per evitare il fatal "secret too short" senza --dev.
+  devkey: secretsecretsecretsecretsecret32
+logging:
+  level: info

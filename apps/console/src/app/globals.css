@@ -1,0 +1,37 @@
+@import '@liveflow/design-system/tokens.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Scrollbar (dark control-room style) ─────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--lf-bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--lf-border-default);
+  border-radius: var(--lf-radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lf-border-strong);
+}
+
+/* ── Input base styles ───────────────────────────────────────── */
+.lf-input {
+  @apply w-full bg-bg-elevated border border-border rounded-lg px-3 py-2;
+  @apply text-base text-text-primary placeholder:text-text-muted;
+  @apply transition-colors duration-fast;
+  @apply focus:outline-none focus:ring-2 focus:ring-border-focus focus:border-transparent;
+}
+
+/* ── Page section heading ────────────────────────────────────── */
+.lf-section-title {
+  @apply text-2xl font-bold text-text-primary tracking-tight;
+}
+
+.lf-section-desc {
+  @apply text-sm text-text-secondary mt-1;
+}

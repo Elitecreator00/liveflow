@@ -1,0 +1,205 @@
+version: "3.9"
+
+# LiveFlow — PoC compositing cloud con LiveKit + Egress
+# Dimostra: telefono/sorgente → WHIP → LiveKit Room → Egress (Chrome headless + pagina scena)
+#            → RTMP composito → MediaMTX → fan-out dummy (simula ADR-0002)
+#
+# AVVIO: vedi README.md — 3 comandi per provarlo
+#
+# Porta map:
+#   7880  — LiveKit Server API (gRPC + HTTP)
+#   7881  — LiveKit Server WebRTC signaling (WebSocket)
+#   7882  — LiveKit Server TURN/UDP
+#   1935  — MediaMTX RTMP ingest (riceve output Egress)
+#   8888  — MediaMTX HLS output (per verificare il composito nel browser)
+#   9997  — MediaMTX HTTP API (health)
+#   3000  — Scene server (pagina HTML scena servita a Chrome headless)
+#   3001  — Overlay API (riceve aggiornamenti overlay dall'operatore)
+
+networks:
+  compositing:
+    driver: bridge
+
+volumes:
+  mediamtx_data: {}
+
+services:
+
+  # ─────────────────────────────────────────────
+  # 1. LiveKit Server — SFU WebRTC + WHIP endpoint
+  # ─────────────────────────────────────────────
+  livekit:
+    image: livekit/livekit-server:v1.7.2
+    container_name: lf_livekit
+    restart: unless-stopped
+    networks:
+      - compositing
+    ports:
+      - "7880:7880"       # HTTP / gRPC API
+      - "7881:7881"       # WebSocket signaling
+      - "50100-50200:50100-50200/udp"  # WebRTC media UDP
+    environment:
+      LIVEKIT_KEYS: "devkey: secret"
+    command: >
+      --dev
+      --bind 0.0.0.0
+      --port 7880
+      --rtc.port-range-start 50100
+      --rtc.port-range-end 50200
+      --rtc.use-external-ip false
+      --redis-host ""
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # 2. Scene server — serve la pagina HTML scena a Chrome headless
+  #    e gestisce gli aggiornamenti overlay via API REST + WebSocket
+  # ─────────────────────────────────────────────
+  scene-server:
+    image: node:20-alpine
+    container_name: lf_scene_server
+    restart: unless-stopped
+    networks:
+      - compositing
+    ports:
+      - "3000:3000"   # pagina scena (Chrome headless aprirà questa URL)
+      - "3001:3001"   # overlay API (operatore chiama questa API per aggiornare)
+    volumes:
+      - ./scene:/app
+    working_dir: /app
+    command: sh -c "npm install --silent && node server.js"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      livekit:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────
+  # 3. LiveKit Egress — renderizza la pagina scena e produce RTMP
+  # ─────────────────────────────────────────────
+  livekit-egress:
+    image: livekit/egress:v1.8.4
+    container_name: lf_egress
+    restart: unless-stopped
+    networks:
+      - compositing
+    environment:
+      # Configurazione Egress: punta al LiveKit Server e al RTMP di output (MediaMTX)
+      EGRESS_CONFIG_BODY: |
+        api_key: devkey
+        api_secret: secret
+        ws_url: ws://livekit:7880
+        log_level: debug
+        # Template URL: la pagina scena è servita dal scene-server
+        # Egress aprirà: http://scene-server:3000/?room=poc-room&token={TOKEN}
+    cap_add:
+      - SYS_ADMIN   # richiesto da Chrome headless (sandbox)
+    shm_size: "1gb"   # Chrome headless richiede shared memory
+    depends_on:
+      livekit:
+        condition: service_healthy
+      scene-server:
+        condition: service_healthy
+      mediamtx:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────
+  # 4. MediaMTX — riceve RTMP dall'Egress, espone HLS per verifica
+  #               simula il punto di ingresso del fan-out ADR-0002
+  # ─────────────────────────────────────────────
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.1
+    container_name: lf_mediamtx_compositor
+    restart: unless-stopped
+    networks:
+      - compositing
+    ports:
+      - "1935:1935"   # RTMP ingest (output Egress arriva qui)
+      - "8888:8888"   # HLS output (per verificare il composito nel browser)
+      - "9997:9997"   # HTTP API health
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9997/v3/paths/list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # 5. RTMP dummy target — simula una piattaforma downstream
+  #    (sostituisce Twitch/YouTube nel PoC, non serve connessione reale)
+  # ─────────────────────────────────────────────
+  rtmp-dummy:
+    image: bluenviron/mediamtx:1.9.1
+    container_name: lf_rtmp_dummy_target
+    restart: unless-stopped
+    networks:
+      - compositing
+    ports:
+      - "19351:1935"   # RTMP dummy target (stream composito arriverà qui)
+      - "8081:8888"    # HLS output dummy (verifica fan-out nel browser)
+    environment:
+      MTX_PATHS_ALL_SOURCE: publisher
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9997/v3/paths/list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # 6. Orchestrator — avvia l'Egress e il fan-out FFmpeg (simula apps/api)
+  #    Uno script Node.js che:
+  #    - crea un access token LiveKit per il publisher di test
+  #    - chiama l'API Egress per avviare il rendering della scena → RTMP
+  #    - avvia ffmpeg per fan-out verso rtmp-dummy (simula ADR-0002)
+  # ─────────────────────────────────────────────
+  orchestrator:
+    image: node:20-alpine
+    container_name: lf_orchestrator
+    restart: "no"
+    networks:
+      - compositing
+    volumes:
+      - ./orchestrator:/app
+    working_dir: /app
+    command: sh -c "npm install --silent && node start.js"
+    depends_on:
+      livekit:
+        condition: service_healthy
+      livekit-egress:
+        condition: service_started
+      mediamtx:
+        condition: service_healthy
+      scene-server:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────
+  # 7. Test source — ffmpeg che simula il telefono della creator
+  #    Pubblica un test pattern colorato via RTMP → MediaMTX whip bridge
+  #    Nota: per WHIP vero usare un browser; qui usiamo RTMP diretto a LiveKit
+  #          tramite il bridge interno di LiveKit (livekit-cli ingest)
+  # ─────────────────────────────────────────────
+  test-source:
+    image: jrottenberg/ffmpeg:6.1-alpine
+    container_name: lf_test_source
+    restart: "no"
+    networks:
+      - compositing
+    command: >
+      -re
+      -f lavfi -i "testsrc2=size=1280x720:rate=30"
+      -f lavfi -i "sine=frequency=440:sample_rate=44100"
+      -vf "drawtext=text='LiveFlow Test Source %{pts\\:hms}':fontcolor=white:fontsize=36:x=10:y=10,
+           drawbox=x=0:y=0:w=iw:h=80:color=black@0.5:t=fill"
+      -c:v libx264 -preset ultrafast -b:v 1500k -g 60 -keyint_min 60
+      -c:a aac -b:a 128k
+      -f rtmp rtmp://livekit:1935/live/test-creator
+    depends_on:
+      livekit:
+        condition: service_healthy

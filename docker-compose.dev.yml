@@ -1,0 +1,98 @@
+# LiveFlow — ambiente di sviluppo locale (Fase 1 + LiveKit ingest)
+# Avvio: docker compose -f docker-compose.dev.yml up -d
+#
+# Servizi:
+#   postgres   — database principale (multi-tenant)
+#   redis      — cache, sessioni, pub/sub realtime
+#   mediamtx   — media server fan-out RTMP downstream (ADR-0002)
+#   livekit    — SFU WebRTC + WHIP endpoint (ingest creator → Room)
+#
+# Le app (apps/api NestJS, apps/web Next.js) girano sull'host via `pnpm dev`.
+#
+# TODO STEP B: aggiungere livekit-egress (livekit/egress:v1.8.4) per
+#   Room → Chrome headless (pagina scena React) → RTMP → MediaMTX → fan-out ADR-0002.
+#   Vedere ADR-0004 e discovery/STUDIO_COMPOSITING_SPIKE.md per i dettagli.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: liveflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-liveflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-liveflow_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-liveflow}
+    ports:
+      - "5433:5432"   # host 5433 per evitare conflitti con altri Postgres locali
+    volumes:
+      - liveflow-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-liveflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: liveflow-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"   # host 6380 per evitare conflitti con altri Redis locali
+    volumes:
+      - liveflow-redisdata:/data
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: liveflow-mediamtx-dev
+    restart: unless-stopped
+    ports:
+      - "1935:1935"   # RTMP ingest
+      - "8554:8554"   # RTSP
+      - "8888:8888"   # HLS
+      - "8889:8889"   # WebRTC/WHIP signaling (HTTP)
+      - "8189:8189/udp"   # WebRTC ICE (media UDP) — ingest da telefono LAN
+      - "9997:9997"   # REST API (health)
+      - "9998:9998"   # Prometheus metrics
+    volumes:
+      - ./apps/api/config/mediamtx.dev.yml:/mediamtx.yml:ro
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # LiveKit Server — SFU WebRTC + WHIP endpoint per l'ingest del telefono
+  # Porta 7880: HTTP API + gRPC  |  7881: WebSocket signaling
+  # UDP 50100-50150: WebRTC media (range contenuto per Docker Desktop/Windows)
+  # --dev mode: nessun config file necessario; key devkey/secret hard-coded.
+  # --rtc.use-external-ip false: per LAN locale (no cloud NAT).
+  #
+  # NOTA PER TEST DA TELEFONO LAN:
+  #   Il browser mobile deve raggiungere il WebSocket su ws://192.168.1.3:7881.
+  #   Imposta LIVEKIT_WS_PUBLIC_URL=ws://192.168.1.3:7880 in apps/api/.env.
+  #   ICE candidates useranno l'IP LAN se il telefono è sulla stessa rete.
+  # ─────────────────────────────────────────────────────────────────────────
+  livekit:
+    # DISABILITATO di default: in dev su Windows usiamo livekit-server NATIVO
+    # (vedi tools/livekit + start.bat), perché la NAT del bridge Docker fa cadere
+    # il media WebRTC ogni ~15s. Questo servizio resta definito solo per
+    # riferimento / eventuale uso su host Linux: si avvia solo col profilo esplicito
+    #   docker compose --profile docker-livekit up livekit
+    profiles: ["docker-livekit"]
+    image: livekit/livekit-server:v1.9.0
+    container_name: liveflow-livekit-dev
+    restart: unless-stopped
+    ports:
+      - "7880:7880"        # HTTP API + WebSocket signaling
+      - "7881:7881"        # ICE TCP (media forzato su TCP in dev — vedi livekit.dev.yaml)
+      # - "7882:7882/udp"  # WebRTC media UDP: DISABILITATO in dev (Docker Desktop/Windows
+      #                      perde i pacchetti video). Riabilitare per il test da telefono LAN.
+    volumes:
+      - ./apps/api/config/livekit.dev.yaml:/livekit.yaml:ro
+    command: ["--config", "/livekit.yaml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7880/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  liveflow-pgdata:
+  liveflow-redisdata:

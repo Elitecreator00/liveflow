@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>Spike — test webcam virtuale (getUserMedia)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#0b0b12; color:#e6e6f0; margin:0; padding:24px; }
+    h1 { font-size:18px; font-weight:600; }
+    video { width:640px; max-width:100%; border-radius:8px; background:#000; }
+    select, button { font-size:14px; padding:6px 10px; border-radius:6px; }
+    #log { margin-top:12px; font-family:ui-monospace,monospace; font-size:13px; white-space:pre-wrap; color:#9aa0b4; }
+    .ok { color:#34d399; } .err { color:#f87171; }
+  </style>
+</head>
+<body>
+  <h1>Spike — la webcam virtuale è vista come camera reale?</h1>
+  <p>
+    <label>Camera: <select id="cam"></select></label>
+    <button id="start">Avvia</button>
+  </p>
+  <video id="v" autoplay playsinline muted></video>
+  <div id="log"></div>
+
+  <script>
+    const log = (msg, cls = '') => {
+      const el = document.getElementById('log');
+      el.innerHTML += `<span class="${cls}">${msg}</span>\n`;
+    };
+
+    async function listCams() {
+      // Serve un primo permesso per leggere le label dei device.
+      try { (await navigator.mediaDevices.getUserMedia({ video: true })).getTracks().forEach(t => t.stop()); } catch (e) {}
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      const sel = document.getElementById('cam');
+      sel.innerHTML = '';
+      cams.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.deviceId; o.textContent = c.label || '(camera senza label)';
+        sel.appendChild(o);
+      });
+      log(`Trovate ${cams.length} camere: ${cams.map(c => c.label).join(' | ')}`,
+          cams.some(c => /webcam|c920/i.test(c.label)) ? 'ok' : '');
+      log('PASS S1 se compare la label impostata in v4l2loopback (es. "HD Webcam C920").');
+    }
+
+    document.getElementById('start').onclick = async () => {
+      const deviceId = document.getElementById('cam').value;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } });
+        document.getElementById('v').srcObject = stream;
+        const s = stream.getVideoTracks()[0].getSettings();
+        log(`Stream attivo: ${s.width}x${s.height}@${s.frameRate}fps`, 'ok');
+      } catch (e) {
+        log(`Errore getUserMedia: ${e.name} ${e.message}`, 'err');
+      }
+    };
+
+    listCams();
+  </script>
+</body>
+</html>

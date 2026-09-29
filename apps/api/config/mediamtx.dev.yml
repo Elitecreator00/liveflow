@@ -1,0 +1,96 @@
+# ─────────────────────────────────────────────────────────────────
+# MediaMTX — configurazione LiveFlow Fase 1 (dev)
+#
+# Principio architetturale (ADR-0002 / lezione PoC RT1):
+#   Il fan-out verso le piattaforme NON avviene tramite runOnReady.
+#   Un singolo ffmpeg multi-output va in Broken Pipe se un target
+#   cade e interrompe TUTTI gli altri stream. → RISCHIO RT1 confermato.
+#
+#   La soluzione: MediaMTX fa SOLO ingest. Il backend NestJS
+#   (FanoutManager) avvia UN processo ffmpeg INDIPENDENTE per ogni
+#   target. La caduta di un target non impatta gli altri.
+#
+# Autenticazione stream key (ADR-0003):
+#   MediaMTX v1.x supporta due meccanismi di auth esterna:
+#
+#   A) externalAuthenticationURL  (usato qui)
+#      Disponibile dalla v1.0. Per ogni connessione in arrivo MediaMTX
+#      esegue POST verso l'URL configurato con JSON body:
+#        { path, action, user, password, ip, protocol, id, query }
+#      Se la risposta è 2xx la connessione è accettata; 4xx/5xx → rifiuto.
+#
+#   B) authHTTPAddress (alias obsoleto di MediaMTX <0.23, rimosso in v1.0)
+#      Non più disponibile in v1.18.2 — NON usare.
+#
+#   Scelta: externalAuthenticationURL verso POST /streaming/auth di apps/api
+#   (StreamingController.authenticateStream). L'endpoint estrae il JWT dal
+#   path "live/<jwt>", verifica firma e scadenza, risponde 200 o 401.
+#
+#   API/metrics rimangono anonimi in dev (authInternalUsers any) come da PoC.
+# ─────────────────────────────────────────────────────────────────
+
+logLevel: info
+logDestinations: [stdout]
+
+# ── REST API (health polling dal backend) ────────────────────────
+api: yes
+apiAddress: :9997
+
+# ── Prometheus metrics ────────────────────────────────────────────
+metrics: yes
+metricsAddress: :9998
+
+# ── Auth ──────────────────────────────────────────────────────────
+# externalAuthenticationURL: per ogni connessione RTMP in arrivo, MediaMTX
+# chiama POST http://localhost:3001/streaming/auth con il payload JSON
+# descritto nel commento sopra. L'endpoint apps/api valida il JWT stream key.
+#
+# authInternalUsers: any consente accesso anonimo ad API e metrics per dev.
+# In produzione: rimuovere authInternalUsers o restringerlo a 127.0.0.1.
+#
+# NB: MediaMTX gira in Docker, quindi "localhost" sarebbe il container stesso.
+# Per raggiungere l'API in esecuzione sull'HOST si usa host.docker.internal
+# (Docker Desktop Windows/Mac). In produzione (API anch'essa in container) qui
+# andrà il nome del servizio, es. http://api:3001/streaming/auth.
+externalAuthenticationURL: http://host.docker.internal:3001/streaming/auth
+
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
+# ── Protocolli ────────────────────────────────────────────────────
+rtmp: yes
+rtmpAddress: :1935
+
+rtsp: yes
+rtspAddress: :8554
+
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+
+# WebRTC/WHIP abilitato: ingest dal telefono (PWA creator) + preview operatore (WHEP)
+webrtc: yes
+webrtcAddress: :8889
+# ICE: per far raggiungere MediaMTX (in Docker) da un telefono sulla LAN,
+# annuncia anche l'IP host. Cambia 192.168.1.3 con l'IP LAN della macchina dev.
+# (in produzione: host pubblico / TURN). La porta UDP 8189 va mappata nel compose.
+webrtcAdditionalHosts: [192.168.1.3, host.docker.internal]
+webrtcLocalUDPAddress: :8189
+
+# ── Path configuration ────────────────────────────────────────────
+# Pattern regex: accetta qualsiasi stream su rtmp://host:1935/live/{streamKey}
+# Il backend valida il streamKey come JWT a scadenza (ADR-0003) tramite
+# externalAuthenticationURL configurato sopra.
+#
+# NESSUN runOnReady: il fan-out è orchestrato dal FanoutManager nel backend.
+paths:
+  "~^live/(.+)$":
+    source: publisher
+    # runOnReady: ASSENTE — orchestrazione fan-out nel backend (ADR-0002)
+    # runOnNotReady: ASSENTE
