@@ -132,17 +132,45 @@ export function buildTextOverlays(overlays = [], { width, height, textFileFor })
   return { filters, files };
 }
 
+/** Formati d'uscita della webcam virtuale: orizzontale (PC) e verticale (telefono). */
+export const LANDSCAPE = { width: 1280, height: 720 };
+export const PORTRAIT = { width: 720, height: 1280 };
+
+/**
+ * Formato della webcam virtuale per una sorgente: verticale se la sorgente è
+ * verticale, altrimenti orizzontale. Una diretta dal telefono deve uscire in
+ * formato telefono; forzarla a 1280x720 la stirava in larghezza (~3x).
+ */
+export function outputSizeFor(width, height) {
+  return height > width ? PORTRAIT : LANDSCAPE;
+}
+
+/**
+ * Adatta il frame a width×height SENZA deformarlo: scala finché entra, poi
+ * bande nere per il resto. Serve quando la sorgente non ha le proporzioni
+ * dell'uscita — 4:3 da webcam PC, o un telefono ruotato a diretta avviata
+ * (il formato del device non può cambiare mentre il browser lo sta leggendo).
+ * Con le stesse proporzioni le bande sono zero e l'immagine resta piena.
+ */
+export function fitFilters(width, height) {
+  return [
+    `scale=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    'setsar=1',
+  ];
+}
+
 /**
  * Filtergraph completo per l'ingestor.
  *
- * Ordine: specchio → scala all'uscita fissa → colore → testi. Lo specchio va per
+ * Ordine: specchio → adatta all'uscita → colore → testi. Lo specchio va per
  * primo perché è più economico su un frame piccolo; i testi per ultimi, così non
  * vengono ribaltati né sfocati insieme all'immagine.
  */
 export function buildFilterChain({ scene = {}, mirror = false, width, height, textFileFor }) {
   const chain = [];
   if (mirror) chain.push('hflip');
-  chain.push(`scale=${width}:${height}`);
+  chain.push(...fitFilters(width, height));
   chain.push(...buildColorFilters(scene.filters));
 
   const { filters, files } = buildTextOverlays(scene.overlays, {

@@ -31,6 +31,15 @@ export class CreateRoomDto {
   @IsString()
   @MaxLength(2)
   country?: string;
+
+  /**
+   * Home page della stanza (prima pagina + nuove tab), es. "https://sito.com".
+   * Senza schema si assume https://. Assente = home predefinita della farm.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  homeUrl?: string;
 }
 
 /**
@@ -57,6 +66,12 @@ export class UpdateRoomDto {
   @IsString()
   @MaxLength(2)
   country?: string;
+
+  /** Home page della stanza; "" = torna alla home predefinita. Dal prossimo avvio. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  homeUrl?: string;
 }
 
 /**
@@ -96,6 +111,8 @@ export interface BrowserRoomView {
   fingerprint: FingerprintSummary;
   /** Codice paese della geo (es. "IT"); null se non riconosciuto. */
   country: RoomCountry | null;
+  /** Home page impostata sulla stanza; null = home predefinita della farm. */
+  homeUrl: string | null;
   viewUrl: string | null;
   lastError: string | null;
   startedAt: Date | null;

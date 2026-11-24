@@ -7,7 +7,8 @@
 // Le coordinate mouse viaggiano normalizzate 0..1: è il server a riportarle
 // sul viewport reale della stanza.
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Spinner } from "@liveflow/design-system";
 
 interface RemoteTab {
@@ -31,6 +32,22 @@ function cdpModifiers(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; 
 }
 
 const MOUSE_BUTTONS = ["left", "middle", "right"] as const;
+
+// Altezze fisse della barra di navigazione e della riga delle tab: le usa anche
+// ViewerChromeSpacer, così una stanza ferma occupa esattamente lo stesso spazio
+// di una attiva e le card nella griglia restano allineate.
+const TOOLBAR_H = "h-10";
+const TABS_H = "h-8";
+
+/** Spazio equivalente alle barre del viewer, per i riquadri segnaposto. */
+export function ViewerChromeSpacer(): React.ReactElement {
+  return (
+    <div aria-hidden className="shrink-0">
+      <div className={TOOLBAR_H} />
+      <div className={TABS_H} />
+    </div>
+  );
+}
 
 // Il browser remoto è Linux: le scorciatoie usano Ctrl. Su Mac l'operatore usa
 // Cmd, quindi Cmd+C/V/X/A/Z/… vanno tradotte in Ctrl, altrimenti non fanno nulla.
@@ -65,6 +82,8 @@ export function BrowserRoomViewer({
   title,
   captcha = null,
   className,
+  standalone = false,
+  onPopOut,
 }: {
   viewUrl: string;
   /** Identità stabile della stanza: la connessione si aggancia a questo, NON a
@@ -79,6 +98,13 @@ export function BrowserRoomViewer({
    */
   captcha?: { type: string; since: number } | null;
   className?: string;
+  /**
+   * Finestra dedicata alla stanza (/room/[id]): il viewer riempie la finestra
+   * e "Schermo intero" usa direttamente il fullscreen del browser.
+   */
+  standalone?: boolean;
+  /** Se presente, mostra il pulsante "Apri in una finestra separata". */
+  onPopOut?: () => void;
 }): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -110,6 +136,75 @@ export function BrowserRoomViewer({
   const [urlDirty, setUrlDirty] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  // Fullscreen nativo del browser attivo (finestra dedicata o viewer espanso).
+  const [nativeFs, setNativeFs] = useState(false);
+
+  // ── Schermo intero ─────────────────────────────────────────────────────────
+  // Il viewer vive in un nodo "host" che si SPOSTA: dentro la card quando è
+  // compresso, direttamente nel <body> quando è espanso. Restare nella card non
+  // funziona: il contenitore della pagina ha un'animazione con transform, che
+  // per il CSS trasforma `position: fixed` in "fisso dentro il contenitore" —
+  // la sidebar e la barra in alto restavano sopra e il resto si vedeva dietro.
+  // Spostare il nodo (invece di ricrearlo) conserva il canvas: l'immagine non
+  // sparisce finché la pagina remota non cambia.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = document.createElement("div");
+    setHost(el);
+    return () => el.remove();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!host) return;
+    if (expanded && !standalone) {
+      host.className = "fixed inset-0 z-[300] flex flex-col bg-bg-base";
+      document.body.appendChild(host);
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+    host.className = standalone ? "flex flex-col flex-1 min-h-0" : "flex flex-col";
+    slotRef.current?.appendChild(host);
+    return undefined;
+  }, [host, expanded, standalone]);
+
+  // Uscita dal fullscreen nativo (Esc, F11, gesto del sistema): il viewer
+  // espanso torna nella card, invece di restare un riquadro a tutta finestra.
+  useEffect(() => {
+    const onChange = () => {
+      const fs = document.fullscreenElement;
+      // Conta solo il fullscreen di QUESTO viewer: con più stanze nella pagina
+      // l'evento arriva a tutte.
+      const mine = !!fs && (standalone || fs === host);
+      setNativeFs(mine);
+      if (!fs) setExpanded(false);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, [host, standalone]);
+
+  const collapse = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    setExpanded(false);
+  };
+
+  const toggleFullscreen = () => {
+    if (nativeFs || expanded) {
+      collapse();
+      return;
+    }
+    if (standalone) {
+      void document.documentElement.requestFullscreen?.().catch(() => undefined);
+      return;
+    }
+    setExpanded(true);
+    // Fullscreen vero del monitor; se il browser lo nega resta comunque il
+    // viewer a tutta finestra sopra la Console.
+    void host?.requestFullscreen?.().catch(() => undefined);
+  };
 
   // viewUrl più recente, letto solo al momento di (ri)connettere. Così il poll
   // che cambia il token NON forza una riconnessione continua.
@@ -216,7 +311,7 @@ export function BrowserRoomViewer({
   useEffect(() => {
     if (!expanded) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setExpanded(false);
+      if (e.key === "Escape") collapse();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -363,50 +458,31 @@ export function BrowserRoomViewer({
   };
 
   const tabs = meta?.tabs ?? [];
+  // Schermo che riempie lo spazio disponibile (finestra dedicata o espanso);
+  // altrimenti riquadro 16:9 dentro la card.
+  const fill = expanded || standalone;
+  const isFullscreen = expanded || nativeFs;
 
-  return (
-    <div
-      className={
-        expanded
-          ? "fixed inset-0 z-50 flex flex-col bg-bg-base"
-          : `flex flex-col bg-bg-base ${className ?? ""}`
-      }
-    >
-      {/* Verifica anti-bot: la completa l'operatore, qui dentro, col mouse. */}
-      {captcha && (
-        <div
-          role="alert"
-          className="flex items-center gap-2 px-3 py-2 bg-warn-muted border-b border-warn/40 shrink-0"
-        >
-          <span aria-hidden className="text-warn">⚠</span>
-          <p className="text-xs text-warn leading-5 flex-1 min-w-0">
-            Il sito chiede una verifica ({captchaTypeLabel(captcha.type)}):
-            completala qui sotto col mouse — la stanza resta ferma finché non passa.
-          </p>
-          <span className="text-2xs font-mono text-warn/80 shrink-0">
-            {formatSince(captcha.since)}
-          </span>
-        </div>
-      )}
-
+  const content = (
+    <div className={`flex flex-col bg-bg-base ${fill ? "flex-1 min-h-0" : ""}`}>
       {/* ── Header (solo in modalità espansa) ───────────────────────────── */}
-      {expanded && (
-        <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border-subtle bg-bg-surface">
+      {expanded && !standalone && (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border-subtle bg-bg-surface shrink-0">
           <span className="text-sm font-semibold text-text-primary truncate">
             {title || "Stanza"}
             {meta?.title ? <span className="text-text-muted font-normal"> — {meta.title}</span> : null}
           </span>
           <button
-            onClick={() => setExpanded(false)}
+            onClick={collapse}
             className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors"
           >
-            Chiudi ✕
+            Esci (Esc) ✕
           </button>
         </div>
       )}
 
       {/* ── Toolbar navigazione ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border-subtle bg-bg-surface">
+      <div className={`flex items-center gap-1.5 px-2 border-b border-border-subtle bg-bg-surface shrink-0 ${TOOLBAR_H}`}>
         <ToolbarButton label="Indietro" onClick={() => send({ type: "history", dir: "back" })}>
           ←
         </ToolbarButton>
@@ -430,17 +506,24 @@ export function BrowserRoomViewer({
         <ToolbarButton label="Vai" onClick={navigate}>
           Vai
         </ToolbarButton>
+        <span aria-hidden className="w-px h-4 bg-border-subtle mx-0.5 shrink-0" />
+        {onPopOut && !expanded && (
+          <ToolbarButton label="Apri in una finestra separata" onClick={onPopOut}>
+            <IconPopOut />
+          </ToolbarButton>
+        )}
         <ToolbarButton
-          label={expanded ? "Comprimi" : "Schermo intero"}
-          onClick={() => setExpanded((v) => !v)}
+          label={isFullscreen ? "Esci da schermo intero" : "Schermo intero"}
+          onClick={toggleFullscreen}
         >
-          {expanded ? "⤡" : "⤢"}
+          {isFullscreen ? <IconCollapse /> : <IconExpand />}
         </ToolbarButton>
       </div>
 
       {/* ── Tab della stanza ────────────────────────────────────────────── */}
-      {tabs.length > 0 && (
-        <div className="flex items-center gap-1 px-2 py-1 border-b border-border-subtle bg-bg-surface overflow-x-auto">
+      {/* Sempre presente (anche senza tab): l'altezza del viewer resta fissa e
+          gli schermi delle stanze affiancate non saltano. */}
+        <div className={`flex items-center gap-1 px-2 border-b border-border-subtle bg-bg-surface overflow-x-auto shrink-0 ${TABS_H}`}>
           {tabs.map((t) => (
             <div
               key={t.id}
@@ -475,12 +558,11 @@ export function BrowserRoomViewer({
             +
           </button>
         </div>
-      )}
 
       {/* ── Schermo remoto ──────────────────────────────────────────────── */}
       <div
-        className={expanded ? "relative bg-black flex-1 min-h-0" : "relative bg-black"}
-        style={expanded ? undefined : { aspectRatio: "16 / 9" }}
+        className={fill ? "relative bg-black flex-1 min-h-0" : "relative bg-black"}
+        style={fill ? undefined : { aspectRatio: "16 / 9" }}
       >
         <canvas
           ref={canvasRef}
@@ -495,6 +577,24 @@ export function BrowserRoomViewer({
           onPaste={onPaste}
           onContextMenu={(e) => e.preventDefault()}
         />
+        {/* Verifica anti-bot: la completa l'operatore col mouse. Sta SOPRA lo
+            schermo e lascia passare i click: non sposta il layout (gli schermi
+            delle stanze affiancate restano allineati) e non copre la casella. */}
+        {captcha && (
+          <div
+            role="alert"
+            className="pointer-events-none absolute top-0 inset-x-0 flex items-center gap-2 px-3 py-1.5 bg-warn text-warn-fg shadow-md"
+          >
+            <span aria-hidden>⚠</span>
+            <p className="text-xs font-medium leading-5 flex-1 min-w-0 truncate">
+              Verifica {captchaTypeLabel(captcha.type)} da completare qui col mouse — la
+              stanza resta ferma finché non passa
+            </p>
+            <span className="text-2xs font-mono shrink-0 opacity-80">
+              {formatSince(captcha.since)}
+            </span>
+          </div>
+        )}
         {clipNotice && (
           <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-md bg-black/80 px-3 py-1 text-xs text-white shadow">
             {clipNotice}
@@ -522,6 +622,48 @@ export function BrowserRoomViewer({
         )}
       </div>
     </div>
+  );
+
+  return (
+    <div
+      ref={slotRef}
+      className={`flex flex-col ${standalone ? "flex-1 min-h-0" : ""} ${className ?? ""}`}
+    >
+      {host && createPortal(content, host)}
+      {/* Segnaposto mentre la stanza è a schermo intero: la card non collassa. */}
+      {expanded && !standalone && (
+        <div
+          className="flex items-center justify-center bg-black/60 text-xs text-text-muted"
+          style={{ aspectRatio: "16 / 9" }}
+        >
+          A schermo intero
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IconExpand(): React.ReactElement {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
+    </svg>
+  );
+}
+
+function IconCollapse(): React.ReactElement {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" />
+    </svg>
+  );
+}
+
+function IconPopOut(): React.ReactElement {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 2h5v5M14 2 7.5 8.5M12 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3.5" />
+    </svg>
   );
 }
 

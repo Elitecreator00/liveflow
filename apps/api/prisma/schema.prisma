@@ -210,6 +210,9 @@ model BrowserRoom {
   // URL proxy della stanza, cifrato AES-256-GCM (CryptoService, C5).
   // Impostato alla creazione, modificabile dai settings (vale dal prossimo avvio).
   encryptedProxy String?
+  // Home page della stanza: prima pagina all'avvio e nuove tab. null = home
+  // predefinita della farm (ROOM_HOME_URL sul data-plane, poi Google).
+  homeUrl String?
 
   status BrowserRoomStatus @default(IDLE)
   // Sorgente Studio (StreamSession LIVE) iniettata come webcam virtuale all'avvio

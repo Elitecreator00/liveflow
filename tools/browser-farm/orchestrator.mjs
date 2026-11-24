@@ -135,7 +135,7 @@ app.get('/rooms', (_req, res) =>
 // ── Avvio stanza ──────────────────────────────────────────────────────────────
 app.post('/rooms/:id/start', async (req, res) => {
   const roomId = sanitizeId(req.params.id);
-  const { fingerprint, proxy, wsUrl, viewerToken, name, mirror, scene } = req.body || {};
+  const { fingerprint, proxy, wsUrl, viewerToken, name, mirror, scene, homeUrl } = req.body || {};
   if (rooms.has(roomId)) return res.status(409).json({ error: 'room already running' });
 
   // Postazione: il primo device del pool che supera il priming (vedi
@@ -264,7 +264,7 @@ app.post('/rooms/:id/start', async (req, res) => {
     ];
     console.log(
       `room ${roomId} avvio: ${device} cdp:${cdpPort} proxy:${proxyServer || 'no'} ` +
-        `source:${wsUrl ? 'si' : 'no'}`,
+        `source:${wsUrl ? 'si' : 'no'} home:${homeUrl || 'predefinita'}`,
     );
     let containerId;
     try {
@@ -275,7 +275,7 @@ app.post('/rooms/:id/start', async (req, res) => {
     }
 
     // 4) Aggancio CDP: auth proxy + screencast gateway.
-    session = new RoomSession(cdpPort, proxyAuth, containerClipboard(containerName));
+    session = new RoomSession(cdpPort, proxyAuth, containerClipboard(containerName), homeUrl);
     try {
       await session.init();
     } catch (e) {

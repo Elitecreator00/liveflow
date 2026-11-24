@@ -6,6 +6,7 @@ import { connectCdp } from './cdp.mjs';
 import { applyRequest, expireIfIdle } from './captcha-watch.mjs';
 import { createInputPump } from './input-queue.mjs';
 import { isCopyShortcut } from './clipboard.mjs';
+import { resolveHomeUrl } from './home-url.mjs';
 
 // Bitmask modifier CDP: Alt=1, Ctrl=2, Meta=4, Shift=8 (già così dal viewer).
 const BUTTON_MASK = { left: 1, right: 2, middle: 4 };
@@ -16,8 +17,6 @@ const MAX_FRAMES_IN_FLIGHT = 2;
 // Oltre questa attesa si riprende comunque (viewer bloccato o tab nascosta).
 const ACK_TIMEOUT_MS = 500;
 
-// Home page della stanza (prima pagina + nuove tab).
-const HOME_URL = 'https://www.google.com/';
 
 export class RoomSession {
   /**
@@ -25,9 +24,11 @@ export class RoomSession {
    * @param {{username:string,password:string}|null} proxyAuth credenziali proxy
    * @param {{read():Promise<string>, write(t:string):Promise<void>}|null} clipboard
    *        appunti del container (clipboard.mjs); null = incolla via insertText
+   * @param {string} [homeUrl] home page della stanza (prima pagina + nuove tab)
    */
-  constructor(cdpPort, proxyAuth, clipboard = null) {
+  constructor(cdpPort, proxyAuth, clipboard = null, homeUrl = null) {
     this.cdpPort = cdpPort;
+    this.homeUrl = resolveHomeUrl(homeUrl);
     this.clipboard = clipboard;
     this.proxyAuth = proxyAuth;
     this.cdp = null;
@@ -121,7 +122,7 @@ export class RoomSession {
     // Se non esiste nessuna pagina (avvio a freddo), creane una sulla home.
     await new Promise((r) => setTimeout(r, 300));
     if (this.targets.size === 0) {
-      await this.cdp.send('Target.createTarget', { url: HOME_URL });
+      await this.cdp.send('Target.createTarget', { url: this.homeUrl });
       this.homeNavigated = true;
     }
   }
@@ -171,12 +172,12 @@ export class RoomSession {
       // eseguire codice nella pagina (vedi captcha-watch.mjs).
       await this.cdp.send('Network.enable', {}, sessionId).catch(() => undefined);
       if (this.proxyAuth) await this.#enableProxyAuth(sessionId);
-      // Prima pagina (about:blank dall'avvio container) → home Google, ma solo
+      // Prima pagina (about:blank dall'avvio container) → home della stanza, ma solo
       // DOPO aver agganciato l'auth proxy, così la prima
       // richiesta passa già dal proxy autenticato (niente errore al primo load).
       if (!this.homeNavigated && (!targetInfo.url || targetInfo.url === 'about:blank')) {
         this.homeNavigated = true;
-        await this.cdp.send('Page.navigate', { url: HOME_URL }, sessionId).catch(() => undefined);
+        await this.cdp.send('Page.navigate', { url: this.homeUrl }, sessionId).catch(() => undefined);
       }
     } catch (e) {
       console.error(`room :${this.cdpPort} setup target failed:`, e.message);
@@ -506,7 +507,7 @@ export class RoomSession {
         }
         case 'tab':
           if (msg.action === 'new') {
-            await this.cdp.send('Target.createTarget', { url: HOME_URL });
+            await this.cdp.send('Target.createTarget', { url: this.homeUrl });
           } else if (msg.action === 'activate' && this.targets.has(msg.id)) {
             await this.#activate(msg.id);
           } else if (msg.action === 'close' && this.targets.has(msg.id)) {

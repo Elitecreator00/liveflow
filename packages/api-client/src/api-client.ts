@@ -602,6 +602,8 @@ export interface BrowserRoom {
   fingerprint: BrowserRoomFingerprint;
   /** Codice paese della geo (es. "IT"); null se non riconosciuto. */
   country: string | null;
+  /** Home page della stanza; null = home predefinita della farm. */
+  homeUrl: string | null;
   /** WebSocket del viewer in-house; presente solo quando RUNNING. */
   viewUrl: string | null;
   lastError: string | null;
@@ -611,7 +613,7 @@ export interface BrowserRoom {
 
 /** Crea una stanza (nome default "Stanza N", fingerprint generato dal server). */
 export async function createBrowserRoom(
-  payload: { name?: string; proxy?: string; country?: string },
+  payload: { name?: string; proxy?: string; country?: string; homeUrl?: string },
   token: string,
 ): Promise<BrowserRoom> {
   return apiFetch<BrowserRoom>("/browser-farm/rooms", {
@@ -628,7 +630,7 @@ export async function listBrowserRooms(token: string): Promise<BrowserRoom[]> {
 /** Settings stanza: nome e/o proxy (`proxy: ""` lo rimuove; vale dal prossimo avvio). */
 export async function updateBrowserRoom(
   roomId: string,
-  payload: { name?: string; proxy?: string; country?: string },
+  payload: { name?: string; proxy?: string; country?: string; homeUrl?: string },
   token: string,
 ): Promise<BrowserRoom> {
   return apiFetch<BrowserRoom>(`/browser-farm/rooms/${roomId}`, {

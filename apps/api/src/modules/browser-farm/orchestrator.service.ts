@@ -12,6 +12,8 @@ export interface StartRoomInput {
   fingerprint: RoomFingerprint;
   /** Proxy in chiaro (server-to-server); '' = nessun proxy. */
   proxy: string;
+  /** Home page della stanza; assente = home predefinita del data-plane. */
+  homeUrl?: string;
   /** Specchio della sorgente al momento dell'avvio. */
   mirror?: boolean;
   /** Scena (overlay + filtri) al momento dell'avvio. */

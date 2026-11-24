@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BrowserRoomStatus, StreamStatus } from '@prisma/client';
-import { BrowserFarmService } from './browser-farm.service';
+import { BrowserFarmService, normalizeHomeUrl } from './browser-farm.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { FingerprintService } from './fingerprint.service';
@@ -496,5 +496,27 @@ describe('BrowserFarmService — verifiche anti-bot e identità', () => {
 
     const service = await buildService();
     await expect(service.identityCheck(ACTOR, 'room-1')).rejects.toThrow(/non è attiva/);
+  });
+});
+
+describe('normalizeHomeUrl (home page della stanza)', () => {
+  it('vuoto = home predefinita della farm', () => {
+    expect(normalizeHomeUrl(undefined)).toBeNull();
+    expect(normalizeHomeUrl('   ')).toBeNull();
+  });
+
+  it('aggiunge https:// quando manca lo schema', () => {
+    expect(normalizeHomeUrl('sito.com')).toBe('https://sito.com/');
+    expect(normalizeHomeUrl(' www.sito.com/login ')).toBe('https://www.sito.com/login');
+  });
+
+  it('mantiene http/https espliciti', () => {
+    expect(normalizeHomeUrl('http://sito.com/a?b=1')).toBe('http://sito.com/a?b=1');
+  });
+
+  it('rifiuta schemi che non sono siti web e indirizzi senza dominio', () => {
+    expect(() => normalizeHomeUrl('javascript:alert(1)')).toThrow(BadRequestException);
+    expect(() => normalizeHomeUrl('file:///etc/passwd')).toThrow(BadRequestException);
+    expect(() => normalizeHomeUrl('ciao')).toThrow(BadRequestException);
   });
 });

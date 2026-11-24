@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -62,12 +63,14 @@ export class BrowserFarmService {
   ): Promise<BrowserRoomView> {
     const name = dto.name?.trim() || (await this.nextDefaultName(actor.agencyId));
     const proxy = dto.proxy?.trim() || '';
+    const homeUrl = normalizeHomeUrl(dto.homeUrl);
 
     const room = await this.prisma.browserRoom.create({
       data: {
         name,
         fingerprint: this.fingerprints.generate(dto.country) as unknown as Prisma.InputJsonValue,
         encryptedProxy: proxy ? this.crypto.encrypt(proxy) : null,
+        homeUrl,
         agencyId: actor.agencyId,
       },
     });
@@ -97,6 +100,10 @@ export class BrowserFarmService {
       // '' = rimuovi il proxy; il nuovo valore vale dal prossimo avvio.
       const proxy = dto.proxy.trim();
       data.encryptedProxy = proxy ? this.crypto.encrypt(proxy) : null;
+    }
+    if (dto.homeUrl !== undefined) {
+      // '' = torna alla home predefinita della farm; vale dal prossimo avvio.
+      data.homeUrl = normalizeHomeUrl(dto.homeUrl);
     }
     if (dto.country) {
       // Ri-geolocalizza il fingerprint mantenendo il resto (UA/viewport/cores).
@@ -192,6 +199,7 @@ export class BrowserFarmService {
         name: room.name,
         fingerprint: room.fingerprint as unknown as RoomFingerprint,
         proxy,
+        homeUrl: room.homeUrl ?? undefined,
         wsUrl,
         viewerToken,
         mirror: sourceMirrored,
@@ -431,6 +439,7 @@ export class BrowserFarmService {
         viewport: fp?.viewport ?? { width: 0, height: 0 },
       },
       country,
+      homeUrl: room.homeUrl,
       viewUrl:
         room.status === BrowserRoomStatus.RUNNING
           ? this.orchestrator.viewerUrl(room.id)
@@ -460,6 +469,32 @@ export class BrowserFarmService {
   private livekitApiSecret(): string {
     return this.config.getOrThrow<string>('LIVEKIT_API_SECRET');
   }
+}
+
+/**
+ * Home page della stanza → URL completo, o null per la home predefinita.
+ * "sito.com" diventa "https://sito.com/". Solo http/https: uno schema come
+ * javascript: o file: aprirebbe nella stanza qualcosa che non è un sito.
+ */
+export function normalizeHomeUrl(input: string | undefined | null): string | null {
+  const raw = (input ?? '').trim();
+  if (!raw) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    throw new BadRequestException(`Home page non valida: "${raw}". Esempio: https://sito.com`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new BadRequestException(
+      'La home page deve essere un indirizzo web (http:// o https://).',
+    );
+  }
+  if (!url.hostname.includes('.') && url.hostname !== 'localhost') {
+    throw new BadRequestException(`Home page non valida: "${raw}". Esempio: https://sito.com`);
+  }
+  return url.toString();
 }
 
 /**

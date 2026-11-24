@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { openSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildFilterChain, sceneShapeKey } from './scene-filters.mjs';
+import { buildFilterChain, sceneShapeKey, outputSizeFor, LANDSCAPE } from './scene-filters.mjs';
 import { createInterface } from 'node:readline';
 import {
   Room,
@@ -53,10 +53,14 @@ const SCENE_DEBOUNCE_MS = 400;
 // Quanto il vecchio FFmpeg resta aperto dopo che il nuovo ha preso il device.
 const HANDOVER_MS = 400;
 
-// Output FISSO verso il device: così il formato v4l2 non cambia mai (1280x720),
-// indipendentemente dal layer simulcast in arrivo (320x180 / 640x360 / 1280x720).
-const OUT_W = 1280;
-const OUT_H = 720;
+// Formato del device: deciso dal PRIMO frame (telefono → 720x1280, PC →
+// 1280x720) e poi bloccato per tutta la vita dell'ingestor. Così il formato
+// v4l2 non cambia mai mentre il browser lo legge, qualunque layer simulcast
+// arrivi. È verificato sul VPS: dopo il priming (1280x720) il primo writer può
+// fissare un formato diverso finché nessuno legge; cambiarlo con un reader
+// aperto invece non è sicuro con v4l2loopback 0.12. Se la sorgente cambia
+// orientamento a diretta avviata, l'immagine si adatta con bande nere.
+let out = null;
 
 let mirror = process.env.MIRROR === '1';
 // Scena dello Studio (overlay + filtri). Arriva all'avvio via SCENE e poi si
@@ -95,8 +99,8 @@ let framesIn = 0;
 let framesDropped = 0;
 
 /**
- * FFmpeg legge frame raw della dimensione corrente in ingresso e li scala a
- * OUT_WxOUT_H prima di scriverli sul device v4l2 come yuv420p.
+ * FFmpeg legge frame raw della dimensione corrente in ingresso e li adatta a
+ * `out` (senza deformarli) prima di scriverli sul device v4l2 come yuv420p.
  *
  * I frame arrivano in I420 (lo stesso formato del decoder): niente conversione a
  * RGBA, che costava una trasformazione per frame e triplicava i byte nel pipe
@@ -104,13 +108,20 @@ let framesDropped = 0;
  */
 function startFfmpeg(width, height) {
   const errLog = openSync('ffmpeg.log', 'a');
+  if (!out) {
+    out = outputSizeFor(width, height);
+    console.error(
+      `formato webcam virtuale: ${out.width}x${out.height} ` +
+        `(sorgente ${width}x${height}, ${out.height > out.width ? 'verticale' : 'orizzontale'})`,
+    );
+  }
   // Specchio + filtri + scritte della scena, in un filtergraph solo: FFmpeg è
   // già nel percorso, quindi non costa un passaggio in più né latenza.
   const { chain, files } = buildFilterChain({
     scene,
     mirror,
-    width: OUT_W,
-    height: OUT_H,
+    width: out.width,
+    height: out.height,
     textFileFor,
   });
   writeTextFiles(files);
@@ -137,7 +148,7 @@ function startFfmpeg(width, height) {
   ffMirror = mirror;
   ffSceneVersion = sceneVersion;
   console.error(
-    `ffmpeg avviato: in ${width}x${height} i420 -> out ${OUT_W}x${OUT_H}` +
+    `ffmpeg avviato: in ${width}x${height} i420 -> out ${out.width}x${out.height}` +
       `${mirror ? ' (specchio)' : ''} -> ${DEVICE} | filtri: ${filters}`,
   );
   return proc;
@@ -277,11 +288,12 @@ function listenCommands() {
           const sameShape = sceneShapeKey(next) === sceneShapeKey(scene);
           scene = next;
           if (sameShape) {
+            const size = out ?? LANDSCAPE;
             const { files } = buildFilterChain({
               scene,
               mirror,
-              width: OUT_W,
-              height: OUT_H,
+              width: size.width,
+              height: size.height,
               textFileFor,
             });
             writeTextFiles(files);

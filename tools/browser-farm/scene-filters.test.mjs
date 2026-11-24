@@ -7,6 +7,10 @@ import {
   buildTextOverlays,
   buildFilterChain,
   sceneShapeKey,
+  fitFilters,
+  outputSizeFor,
+  LANDSCAPE,
+  PORTRAIT,
 } from './scene-filters.mjs';
 
 const textFileFor = (i) => `/tmp/t${i}.txt`;
@@ -123,16 +127,38 @@ test('catena completa: specchio, scala, colore e testi in ordine', () => {
   });
   const parts = chain.split(',');
   assert.equal(parts[0], 'hflip'); // prima: costa meno sul frame piccolo
-  assert.equal(parts[1], 'scale=1280:720');
+  assert.match(parts[1], /^scale=1280:720:force_original_aspect_ratio=decrease/);
   assert.match(chain, /eq=brightness/);
   // Il testo non deve essere ribaltato insieme all'immagine.
   assert.ok(chain.indexOf('drawtext') > chain.indexOf('hflip'));
 });
 
-test('senza scena resta la sola scala (nessun costo aggiunto)', () => {
+test('senza scena resta il solo adattamento al formato', () => {
   const { chain, files } = buildFilterChain({ mirror: false, ...SIZE });
-  assert.equal(chain, 'scale=1280:720');
+  assert.equal(chain, fitFilters(1280, 720).join(','));
   assert.deepEqual(files, []);
+});
+
+test('la sorgente non viene mai deformata: scala proporzionale + bande', () => {
+  const [scale, pad] = fitFilters(1280, 720);
+  // Senza force_original_aspect_ratio un 360x640 veniva stirato a 1280x720.
+  assert.match(scale, /force_original_aspect_ratio=decrease/);
+  assert.match(scale, /force_divisible_by=2/); // yuv420p vuole dimensioni pari
+  assert.equal(pad, 'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black');
+});
+
+test('telefono in verticale → webcam verticale; PC → orizzontale', () => {
+  assert.deepEqual(outputSizeFor(360, 640), PORTRAIT);
+  assert.deepEqual(outputSizeFor(720, 1280), PORTRAIT);
+  assert.deepEqual(outputSizeFor(1280, 720), LANDSCAPE);
+  assert.deepEqual(outputSizeFor(640, 480), LANDSCAPE); // webcam 4:3
+  assert.deepEqual(outputSizeFor(720, 720), LANDSCAPE); // quadrato: default PC
+});
+
+test('in verticale anche la catena usa il formato verticale', () => {
+  const { chain } = buildFilterChain({ ...PORTRAIT, textFileFor });
+  assert.match(chain, /^scale=720:1280:/);
+  assert.match(chain, /pad=720:1280:/);
 });
 
 test('cambiare solo il testo non cambia la forma della scena', () => {
